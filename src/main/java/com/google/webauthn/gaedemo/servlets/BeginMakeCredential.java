@@ -15,6 +15,7 @@
 package com.google.webauthn.gaedemo.servlets;
 
 import java.io.IOException;
+import java.security.KeyPair;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -28,17 +29,20 @@ import javax.servlet.http.HttpServletResponse;
 import com.google.appengine.api.users.User;
 import com.google.appengine.api.users.UserService;
 import com.google.appengine.api.users.UserServiceFactory;
+import com.google.common.base.Splitter;
+import com.google.common.collect.Iterables;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.webauthn.gaedemo.objects.AttestationConveyancePreference;
+import com.google.webauthn.gaedemo.objects.AuthenticationExtensionsClientInputs;
 import com.google.webauthn.gaedemo.objects.AuthenticatorAttachment;
 import com.google.webauthn.gaedemo.objects.AuthenticatorSelectionCriteria;
-import com.google.webauthn.gaedemo.objects.AuthenticatorTransport;
 import com.google.webauthn.gaedemo.objects.PublicKeyCredentialCreationOptions;
 import com.google.webauthn.gaedemo.objects.PublicKeyCredentialDescriptor;
 import com.google.webauthn.gaedemo.objects.PublicKeyCredentialType;
 import com.google.webauthn.gaedemo.objects.UserVerificationRequirement;
+import com.google.webauthn.gaedemo.storage.CableKeyPair;
 import com.google.webauthn.gaedemo.storage.Credential;
 import com.google.webauthn.gaedemo.storage.SessionData;
 
@@ -60,7 +64,7 @@ public class BeginMakeCredential extends HttpServlet {
       throws ServletException, IOException {
     User user = userService.getCurrentUser();
     // String rpId = (request.isSecure() ? "https://" : "http://") + request.getHeader("Host");
-    String rpId = request.getHeader("Host").split(":")[0];
+    String rpId = Iterables.get(Splitter.on(':').split(request.getHeader("Host")), 0);
     String rpName = getServletContext().getInitParameter("name");
     rpName = (rpName == null ? "" : rpName);
 
@@ -73,11 +77,21 @@ public class BeginMakeCredential extends HttpServlet {
     }
 
     SessionData session = new SessionData(options.challenge, rpId);
-    
+
     session.save(userService.getCurrentUser().getEmail());
     JsonObject sessionJson = session.getJsonObject();
     JsonObject optionsJson = options.getJsonObject();
     optionsJson.add("session", sessionJson);
+
+    AuthenticationExtensionsClientInputs extensions = new AuthenticationExtensionsClientInputs();
+    try {
+      KeyPair cableKeyPair = extensions.addCableRegistrationData();
+      // Store the KeyPair in storage
+      CableKeyPair storedKeyPair = new CableKeyPair(cableKeyPair);
+      storedKeyPair.save(session.getId());
+    } catch (Exception e) {}
+
+    optionsJson.add("extensions", extensions.getRegistrationExtensions());
 
     response.setContentType("application/json");
     response.getWriter().println(optionsJson.toString());

@@ -25,6 +25,7 @@ import javax.xml.bind.DatatypeConverter;
 
 import com.google.appengine.api.users.UserService;
 import com.google.appengine.api.users.UserServiceFactory;
+import com.google.common.io.BaseEncoding;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.webauthn.gaedemo.objects.AttestationObject;
@@ -54,10 +55,11 @@ public class RegisteredKeys extends HttpServlet {
     List<Credential> savedCreds = Credential.load(currentUser);
 
     JsonArray result = new JsonArray();
-    response.setContentType("text/json");
+    response.setContentType("application/json");
     for (Credential c : savedCreds) {
       JsonObject cJson = new JsonObject();
       cJson.addProperty("handle", DatatypeConverter.printHexBinary(c.getCredential().rawId));
+      cJson.addProperty("base64handle", BaseEncoding.base64Url().encode(c.getCredential().rawId));
       CredentialPublicKey publicKey =
           ((AuthenticatorAttestationResponse) c.getCredential().getResponse())
               .getAttestationObject().getAuthenticatorData().getAttData().getPublicKey();
@@ -69,6 +71,17 @@ public class RegisteredKeys extends HttpServlet {
       cJson.addProperty("name", attObj.getAttestationStatement().getName());
       cJson.addProperty("date", c.getDate().toString());
       cJson.addProperty("id", c.id);
+      cJson.addProperty("hasCable", c.hasCablePairingData());
+      if (c.hasUserVerificationMethod()) {
+        cJson.addProperty("userVerificationMethod", c.getUserVerificationMethod());
+      }
+      if (((AuthenticatorAttestationResponse) c.getCredential().getResponse()).getTransports() != null) {
+         JsonArray transportList = new JsonArray();
+         for (String transport : ((AuthenticatorAttestationResponse) c.getCredential().getResponse()).getTransports()) {
+           transportList.add(transport);
+         }
+         cJson.add("transports", transportList);
+      }
       result.add(cJson);
     }
     response.getWriter().print(result.toString());

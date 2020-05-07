@@ -1,28 +1,29 @@
 package com.google.webauthn.gaedemo.endpoints;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import javax.inject.Named;
+import javax.servlet.ServletException;
+
 import com.google.api.server.spi.config.Api;
 import com.google.api.server.spi.config.ApiMethod;
 import com.google.api.server.spi.config.ApiNamespace;
 import com.google.appengine.api.oauth.OAuthRequestException;
 import com.google.appengine.api.users.User;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.io.BaseEncoding;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.webauthn.gaedemo.crypto.Crypto;
 import com.google.webauthn.gaedemo.exceptions.ResponseException;
-import com.google.webauthn.gaedemo.exceptions.WebAuthnException;
 import com.google.webauthn.gaedemo.objects.AndroidSafetyNetAttestationStatement;
 import com.google.webauthn.gaedemo.objects.AttestationObject;
 import com.google.webauthn.gaedemo.objects.AuthenticatorAssertionResponse;
 import com.google.webauthn.gaedemo.objects.AuthenticatorAttestationResponse;
-import com.google.webauthn.gaedemo.objects.EccKey;
 import com.google.webauthn.gaedemo.objects.FidoU2fAttestationStatement;
-import com.google.webauthn.gaedemo.objects.PublicKeyCredentialCreationOptions;
 import com.google.webauthn.gaedemo.objects.PublicKeyCredential;
+import com.google.webauthn.gaedemo.objects.PublicKeyCredentialCreationOptions;
 import com.google.webauthn.gaedemo.objects.PublicKeyCredentialRequestOptions;
 import com.google.webauthn.gaedemo.server.AndroidSafetyNetServer;
 import com.google.webauthn.gaedemo.server.PackedServer;
@@ -30,15 +31,6 @@ import com.google.webauthn.gaedemo.server.Server;
 import com.google.webauthn.gaedemo.server.U2fServer;
 import com.google.webauthn.gaedemo.storage.Credential;
 import com.google.webauthn.gaedemo.storage.SessionData;
-
-import com.google.webauthn.gaedemo.objects.PublicKeyCredentialRequestOptions;
-import org.apache.commons.codec.DecoderException;
-import org.apache.commons.codec.binary.Hex;
-
-import java.util.ArrayList;
-import java.util.List;
-import javax.inject.Named;
-import javax.servlet.ServletException;
 
 
 /**
@@ -52,7 +44,8 @@ import javax.servlet.ServletException;
   name = "fido2RequestHandler",
   version = "v1",
   scopes = {Constants.EMAIL_SCOPE, Constants.OPENID_SCOPE},
-  clientIds = {Constants.WEB_CLIENT_ID, Constants.ANDROID_CLIENT_ID},
+  clientIds = {Constants.WEB_CLIENT_ID, Constants.ANDROID_CLIENT_ID,
+      Constants.ANDROID_CLIENT_ID2},
   audiences = {Constants.ANDROID_AUDIENCE},
   namespace = @ApiNamespace(
       ownerName = "gaedemo.webauthn.google.com", ownerDomain = "gaedemo.webauthn.google.com")
@@ -181,19 +174,7 @@ public class Fido2RequestHandler {
       throw new ServletException("Unable to validate assertion", e);
     }
 
-    switch (savedCredential.getCredential().getAttestationType()) {
-      case FIDOU2F:
-        U2fServer.verifyAssertion(cred, user.getEmail(), session, savedCredential);
-        break;
-      case ANDROIDSAFETYNET:
-        AndroidSafetyNetServer.verifyAssertion(cred, user.getEmail(), session, savedCredential);
-        break;
-      case PACKED:
-        PackedServer.verifyAssertion(cred, user.getEmail(), session, savedCredential);
-        break;
-      case NONE:
-        break;
-    }
+    Server.verifyAssertion(cred, user.getEmail(), session, savedCredential);
 
     List<String> resultList = new ArrayList<String>();
     resultList.add(savedCredential.toJson());
@@ -212,8 +193,6 @@ public class Fido2RequestHandler {
     for (Credential c : savedCreds) {
       JsonObject cJson = new JsonObject();
       cJson.addProperty("handle", BaseEncoding.base64Url().encode(c.getCredential().rawId));
-      EccKey ecc = (EccKey) ((AuthenticatorAttestationResponse) c.getCredential().getResponse())
-          .getAttestationObject().getAuthenticatorData().getAttData().getPublicKey();
       // TODO
 /*
       try {
@@ -247,12 +226,7 @@ public class Fido2RequestHandler {
       throw new OAuthRequestException("User is not authenticated");
     }
 
-    // TODO
-    String id = null;
-    String credentialId = null;
-    Credential.remove(user.getEmail(), id);
-    Credential.remove(user.getEmail(), credentialId);
-
+    Credential.remove(user.getEmail(), publicKey);
     return new String[] {"OK"};
   }
 }

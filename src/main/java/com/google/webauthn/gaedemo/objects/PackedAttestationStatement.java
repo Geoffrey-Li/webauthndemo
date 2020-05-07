@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import com.googlecode.objectify.annotation.Subclass;
 
@@ -43,8 +44,7 @@ public class PackedAttestationStatement extends AttestationStatement {
    * @param attestnCert
    * @param caCert
    */
-  public PackedAttestationStatement(byte[] sig, byte[] attestnCert, List<byte[]> caCert,
-      String alg) {
+  public PackedAttestationStatement(byte[] sig, byte[] attestnCert, List<byte[]> caCert, String alg) {
     super();
     this.sig = sig;
     this.attestnCert = attestnCert;
@@ -97,23 +97,28 @@ public class PackedAttestationStatement extends AttestationStatement {
 
     for (DataItem data : given.getKeys()) {
       if (data instanceof UnicodeString) {
-        if (((UnicodeString) data).getString().equals("x5c")) {
-          Array array = (Array) given.get(data);
-          List<DataItem> list = array.getDataItems();
-          if (list.size() > 0) {
-            result.attestnCert = ((ByteString) list.get(0)).getBytes();
-          }
-          result.caCert = new ArrayList<byte[]>();
-          for (int i = 1; i < list.size(); i++) {
-            result.caCert.add(((ByteString) list.get(i)).getBytes());
-          }
-        } else if (((UnicodeString) data).getString().equals("sig")) {
-          result.sig = ((ByteString) (given.get(data))).getBytes();
-        } else if (((UnicodeString) data).getString().equals("alg")) {
-          int algInt = new BigDecimal(((NegativeInteger) (given.get(data))).getValue()).intValueExact();
-          result.alg = Algorithm.decode(algInt);
-        } else if (((UnicodeString) data).getString().equals("ecdaaKeyId")) {
-          result.ecdaaKeyId = ((ByteString) (given.get(data))).getBytes();
+        switch (((UnicodeString) data).getString()) {
+          case "x5c":
+            Array array = (Array) given.get(data);
+            List<DataItem> list = array.getDataItems();
+            if (list.size() > 0) {
+              result.attestnCert = ((ByteString) list.get(0)).getBytes();
+            }
+            result.caCert = new ArrayList<byte[]>();
+            for (int i = 1; i < list.size(); i++) {
+              result.caCert.add(((ByteString) list.get(i)).getBytes());
+            }
+            break;
+          case "sig":
+            result.sig = ((ByteString) (given.get(data))).getBytes();
+            break;
+          case "alg":
+            int algInt = new BigDecimal(((NegativeInteger) (given.get(data))).getValue()).intValueExact();
+            result.alg = Algorithm.decode(algInt);
+            break;
+          case "ecdaaKeyId":
+            result.ecdaaKeyId = ((ByteString) (given.get(data))).getBytes();
+            break;
         }
       }
     }
@@ -141,26 +146,19 @@ public class PackedAttestationStatement extends AttestationStatement {
   }
 
   @Override
+  public int hashCode() {
+    return Objects.hash(Arrays.hashCode(sig), Arrays.hashCode(attestnCert), caCert, alg, Arrays.hashCode(ecdaaKeyId));
+  }
+
+  @Override
   public boolean equals(Object obj) {
-    if (obj instanceof PackedAttestationStatement) {
-      PackedAttestationStatement other = (PackedAttestationStatement) obj;
-      if (attestnCert == other.attestnCert || Arrays.equals(attestnCert, other.attestnCert)) {
-        if (Arrays.equals(sig, other.sig)) {
-          if (caCert == other.caCert || caCert.size() == other.caCert.size()) {
-            if (caCert != null) {
-              for (int i = 0; i < caCert.size(); i++) {
-                if (!Arrays.equals(caCert.get(i), other.caCert.get(i))) {
-                  return false;
-                }
-              }
-            }
-            if (other.alg != alg) {
-              return false;
-            }
-            return true;
-          }
-        }
-      }
+    if (!(obj instanceof PackedAttestationStatement)) {
+      return false;
+    }
+    PackedAttestationStatement other = (PackedAttestationStatement) obj;
+    try {
+      return encode().equals(other.encode());
+    } catch (CborException e) {
     }
     return false;
   }

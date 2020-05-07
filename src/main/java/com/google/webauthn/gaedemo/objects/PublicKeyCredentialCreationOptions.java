@@ -35,7 +35,7 @@ public class PublicKeyCredentialCreationOptions {
   ArrayList<PublicKeyCredentialDescriptor> excludeCredentials;
   protected AuthenticatorSelectionCriteria authenticatorSelection;
   protected AttestationConveyancePreference attestation;
-  protected AuthenticationExtensions extensions;
+  protected AuthenticationExtensionsClientInputs extensions;
 
   /**
    * 
@@ -57,7 +57,9 @@ public class PublicKeyCredentialCreationOptions {
     pubKeyCredParams = new ArrayList<PublicKeyCredentialParameters>();
     excludeCredentials = new ArrayList<PublicKeyCredentialDescriptor>();
     rp = new PublicKeyCredentialRpEntity(rpId, rpName, null);
-    user = new PublicKeyCredentialUserEntity(userName, userId.getBytes());
+    byte[] userIdBytes = new byte[32];
+    random.nextBytes(userIdBytes);
+    user = new PublicKeyCredentialUserEntity(userName, userIdBytes);
 
     challenge = new byte[CHALLENGE_LENGTH];
     random.nextBytes(challenge);
@@ -82,7 +84,7 @@ public class PublicKeyCredentialCreationOptions {
     extensions = null;
   }
 
-  public void setExtensions(AuthenticationExtensions extensions) {
+  public void setExtensions(AuthenticationExtensionsClientInputs extensions) {
     this.extensions = extensions;
   }
 

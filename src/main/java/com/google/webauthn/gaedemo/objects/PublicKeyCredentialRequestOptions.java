@@ -14,13 +14,15 @@
 
 package com.google.webauthn.gaedemo.objects;
 
-import com.google.common.io.BaseEncoding;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.webauthn.gaedemo.storage.Credential;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.google.common.io.BaseEncoding;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.google.webauthn.gaedemo.crypto.Cable;
+import com.google.webauthn.gaedemo.storage.Credential;
 
 public class PublicKeyCredentialRequestOptions {
   private static final int CHALLENGE_LENGTH = 32;
@@ -34,7 +36,7 @@ public class PublicKeyCredentialRequestOptions {
   public String rpId;
   protected ArrayList<PublicKeyCredentialDescriptor> allowCredentials;
   protected UserVerificationRequirement userVerification;
-  AuthenticationExtensions extensions;
+  AuthenticationExtensionsClientInputs extensions;
   
 
   /**
@@ -63,8 +65,15 @@ public class PublicKeyCredentialRequestOptions {
       allowCredentials.add(credential.getJsonObject());
     }
     result.add("allowCredentials", allowCredentials);
+    if (extensions != null) {
+      result.add("extensions", extensions.getJsonObject());
+    }
 
     return result;
+  }
+
+  public List<PublicKeyCredentialDescriptor> getAllowCredentials() {
+    return allowCredentials;
   }
 
   /**
@@ -76,9 +85,28 @@ public class PublicKeyCredentialRequestOptions {
       PublicKeyCredential storedCred = c.getCredential();
       if (storedCred == null)
         continue;
+
       PublicKeyCredentialDescriptor pkcd =
           new PublicKeyCredentialDescriptor(PublicKeyCredentialType.PUBLIC_KEY, storedCred.rawId);
+
+      if (((AuthenticatorAttestationResponse) storedCred.getResponse()).getTransports() != null) {
+        ArrayList<AuthenticatorTransport> transportList = new ArrayList<>();
+        for (String transport : ((AuthenticatorAttestationResponse) storedCred.getResponse()).getTransports()) {
+          transportList.add(AuthenticatorTransport.decode(transport));
+        }
+        pkcd.setTransports(transportList);
+      }
+
       allowCredentials.add(pkcd);
+
+      Cable cableCrypto = new Cable();
+      CablePairingData cablePairingData = c.getCablePairingData();
+      if (cablePairingData != null) {
+        if (extensions == null) {
+          extensions = new AuthenticationExtensionsClientInputs();
+        }
+        extensions.addCableSessionData(cableCrypto.generateSessionData(cablePairingData));
+      }
     }
   }
 }

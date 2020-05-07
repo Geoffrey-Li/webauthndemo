@@ -14,6 +14,8 @@
 
 package com.google.webauthn.gaedemo.objects;
 
+import java.nio.charset.StandardCharsets;
+
 import com.google.common.io.BaseEncoding;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
@@ -28,19 +30,27 @@ public class AuthenticatorAttestationResponse extends AuthenticatorResponse {
   private static class AttestationResponseJson {
     String clientDataJSON;
     String attestationObject;
+    String[] transports;
   }
 
   public AttestationObject decodedObject;
+  public String[] transports;
 
   /**
    *
    */
   public AuthenticatorAttestationResponse() {}
 
+  /**
+   * Create AuthenticatorAttestationResponse from member objects.
+   * @param clientDataJSON
+   * @param attestationObject
+   * @throws ResponseException
+   */
   public AuthenticatorAttestationResponse(String clientDataJSON, String attestationObject)
       throws ResponseException {
     clientData = CollectedClientData.decode(clientDataJSON);
-    clientDataBytes = clientDataJSON.getBytes();
+    clientDataBytes = clientDataJSON.getBytes(StandardCharsets.UTF_8);
     try {
       decodedObject = AttestationObject.decode(BaseEncoding.base64().decode(attestationObject));
     } catch (CborException e) {
@@ -65,7 +75,9 @@ public class AuthenticatorAttestationResponse extends AuthenticatorResponse {
       throw new ResponseException("Cannot decode attestation object");
     }
 
-    clientData = gson.fromJson(new String(clientDataBytes), CollectedClientData.class);
+    clientData = gson.fromJson(new String(clientDataBytes, StandardCharsets.UTF_8),
+        CollectedClientData.class);
+    transports = parsedObject.transports;
   }
 
   /**
@@ -88,4 +100,12 @@ public class AuthenticatorAttestationResponse extends AuthenticatorResponse {
   public AttestationObject getAttestationObject() {
     return decodedObject;
   }
+
+  /**
+   * @return the list of transports supported by the credential
+   */
+  public String[] getTransports() {
+    return transports;
+  }
+  
 }

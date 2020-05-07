@@ -35,19 +35,28 @@ const onClick = (q, func) => {
   $(q).addEventListener('click', func);
 };
 
-function addErrorMsg(msg) {
-  $('#error-text').innerHTML = msg;
-  show('#error');
+const onCheck = (q, on, off) => {
+  $(q).addEventListener('change', () => {
+    if($(q).checked) {
+      on();
+    } else {
+      off();
+    }
+  });
+}
+
+function showErrorMsg(msg) {
+  $('#snack-bar').MaterialSnackbar.showSnackbar({
+    message: msg,
+    timeout: 5000
+  });
 };
 
-function addSuccessMsg(msg) {
-  $('#success-text').innerHTML = msg;
-  show('#success');
-};
-
-function removeMsgs() {
-  hide('#error');
-  hide('#success');
+function showSuccessMsg(msg) {
+  $('#snack-bar').MaterialSnackbar.showSnackbar({
+    message: msg,
+    timeout: 5000
+  });
 };
 
 function _fetch(url, obj) {
@@ -88,20 +97,43 @@ function fetchCredentials() {
   _fetch('/RegisteredKeys').then(response => {
     let credentials = '';
     for (let i in response) {
-      let { handle, publicKey, name, date, id } = response[i];
+      let { handle, base64handle, publicKey, name, date, id, transports, userVerificationMethod } = response[i];
+      const trimmedHandle = base64handle.replace(/=/g, '');
       let buttonId = `delete${i}`;
       credentials +=
-        `<div class="mdl-cell mdl-cell--1-offset mdl-cell-4-col">
+        `<div class="mdl-cell mdl-cell--1-offset-desktop mdl-cell-4-col">
            <div class="mdl-card mdl-shadow--4dp" id="${handle}">
-             <div class="mdl-card__title mdl-card--border">${name}</div>
+             <div class="mdl-card__title mdl-card--border">
+                <label class="mdl-switch mdl-js-switch mdl-js-ripple-effect" for="switch-${trimmedHandle}">
+                  <input type="checkbox" id="switch-${trimmedHandle}" class="mdl-switch__input" checked>
+                  <span class="mdl-switch__label">${name}</span>
+                </label>
+             </div>
              <div class="mdl-card__supporting-text">Enrolled ${date}</div>
              <div class="mdl-card__subtitle-text">Public Key</div>
              <div class="mdl-card__supporting-text">${publicKey}</div>
              <div class="mdl-card__subtitle-text">Key Handle</div>
-             <div class="mdl-card__supporting-text">${handle}</div>
-             <div class="mdl-card__menu">
+             <div class="mdl-card__supporting-text">${handle}</div>`;
+      if (userVerificationMethod) {
+        credentials +=
+            `<div class="mdl-card__subtitle-text">User Verification Method</div>
+             <div class="mdl-card__supporting-text">${userVerificationMethod}</div>`;
+      }
+      if (transports) {
+        credentials +=
+          `<div class="mdl-card__subtitle-text">Transports</div>
+          <div class="mdl-card__supporting-text">`;
+        for (const transport of transports) {
+          credentials += `<input type="checkbox" id="${transport}${trimmedHandle}" value="${transport}${trimmedHandle}" checked>${transport} &nbsp;`;
+        }
+        credentials += `</div>`;
+      }
+      credentials +=
+            `<div class="mdl-card__menu">
                <button id="${buttonId}"
-                 class="mdl-button mdl-button--icon mdl-js-button mdl-js-ripple-effect">
+                 class="mdl-button mdl-button--icon mdl-js-button mdl-js-ripple-effect"
+                 title="Removes this credential registration from the server"
+                 >
                  <i class="material-icons">delete_forever</i>
                </button>
              </div>
@@ -111,11 +143,45 @@ function fetchCredentials() {
     }
     $('#credentials').innerHTML = credentials;
 
+    componentHandler.upgradeAllRegistered();
+
     for (let i in response) {
-      let { handle, publicKey, name, date, id } = response[i];
+      let { handle, base64handle, publicKey, name, date, id } = response[i];
+      const trimmedHandle = base64handle.replace(/=/g, '');
       onClick(`#delete${i}`, removeCredential(id));
+      onCheck(`#switch-${trimmedHandle}`, brightenCard(handle), dimCard(handle));
     }
   });
+}
+
+function brightenCard(id) {
+  return () => {
+    let card = document.getElementById(id);
+    card.animate([{
+      backgroundColor: '#ADADAD'
+    },{
+      backgroundColor: 'white'
+    }], {
+      duration: 200,
+      easing: 'ease-out',
+      fill: 'forwards'
+    });
+  }
+}
+
+function dimCard(id) {
+  return () => {
+    let card = document.getElementById(id);
+    card.animate([{
+      backgroundColor: 'white'
+    },{
+      backgroundColor: '#ADADAD'
+    }], {
+      duration: 200,
+      easing: 'ease-out',
+      fill: 'forwards'
+    });
+  }
 }
 
 function removeCredential(id) {
@@ -125,50 +191,109 @@ function removeCredential(id) {
     }).then(() => {
       fetchCredentials();
     }).catch(err => {
-      addErrorMsg(`An error occurred during removal [${err.toString()}]`);
+      showErrorMsg(`An error occurred during removal [${err.toString()}]`);
     });
   }
 }
 
 function credentialListConversion(list) {
-  return list.map(item => {
+  // Filter unchecked credentials
+  const filteredList = list.filter((element) => {
+    try {
+      const base64Id = '#switch-'.concat(element.id.replace(/\+/g, '-')
+          .replace(/\//g,'_').replace(/=/g,'')).replace(/=/g, '');
+      if (isChecked(base64Id)) {
+        return true;
+      } else {
+        return false;
+      }
+    } catch(e) {
+      return true;
+    }
+  });
+
+  return filteredList.map(item => {
     const cred = {
       type: item.type,
       id: strToBin(item.id)
     };
     if (item.transports) {
-      cred.transports = list.transports;
+      const newTransportList = [];
+      // Filter out unchecked transports
+      for (transport of item.transports) {
+        try {
+          // The transport id is the transport name concatenated with the
+          // corresponding key handle
+          const base64Id = '#'.concat(transport, item.id.replace(/\+/g, '-')
+              .replace(/\//g,'_').replace(/=/g,''));
+          if (isChecked(base64Id)) {
+            newTransportList.push(transport);
+          }
+        } catch(e) {};
+      }
+      if (newTransportList.length) {
+        cred.transports = newTransportList;
+      }
     }
     return cred;
   });
 }
 
-function addCredential() {
-  removeMsgs();
+function serializeUvm(uvm) {
+  var uvmJson = new Array();
+  for (var i = 0; i < uvm.length; i ++) {
+    const uvmEntry = {};
+    uvmEntry.userVerificationMethod = uvm[i][0];
+    uvmEntry.keyProtectionType = uvm[i][1];
+    uvmEntry.atchuvmJsonerProtectionType = uvm[i][2];
+    uvmJson.push(uvmEntry);
+  }
+  return uvmJson;
+}
+
+function registerNewCredential() {
+  const advancedOptions = {};
+  if (isChecked('#switch-rk')) {
+    advancedOptions.requireResidentKey = isChecked('#switch-rk');
+  }
+  if (isChecked('#switch-rr')) {
+    advancedOptions.excludeCredentials = isChecked('#switch-rr');
+  }
+  if ($('#userVerification').value != "none") {
+    advancedOptions.userVerification = $('#userVerification').value;
+  }
+  if ($('#attachment').value != "none") {
+    advancedOptions.authenticatorAttachment = $('#attachment').value;
+  }
+  if ($('#conveyance').value != "NA") {
+    advancedOptions.attestationConveyancePreference = $('#conveyance').value;
+  }
+  makeCredential(advancedOptions);
+}
+
+function registerPlatformAuthenticator() {
+  const advancedOptions = {};
+  if (isChecked('#switch-rk')) {
+    advancedOptions.requireResidentKey = isChecked('#switch-rk');
+  }
+  if (isChecked('#switch-rr')) {
+    advancedOptions.excludeCredentials = isChecked('#switch-rr');
+  }
+  advancedOptions.userVerification = 'required';
+  advancedOptions.authenticatorAttachment = 'platform';
+  if ($('#conveyance').value != "NA") {
+    advancedOptions.attestationConveyancePreference = $('#conveyance').value;
+  }
+  makeCredential(advancedOptions);
+}
+
+function makeCredential(advancedOptions) {
   show('#active');
 
   let _options;
-  const advancedOptions = {};
-  if (isChecked('#switch-advanced')) {
-    if (isChecked('#switch-rk')) {
-      advancedOptions.requireResidentKey = isChecked('#switch-rk');
-    }
-    if (isChecked('#switch-rr')) {
-      advancedOptions.excludeCredentials = isChecked('#switch-rr');
-    }
-    if ($('#userVerification').value != "none") {
-      advancedOptions.userVerification = $('#userVerification').value;
-    }
-    if ($('#attachment').value != "none") {
-      advancedOptions.authenticatorAttachment = $('#attachment').value;
-    }
-    if ($('#conveyance').value != "NA") {
-      advancedOptions.attestationConveyancePreference = $('#conveyance').value;
-    }
-  }
 
   return _fetch('/BeginMakeCredential', {
-    advanced: isChecked('#switch-advanced'),
+    advanced: true,
     advancedOptions: JSON.stringify(advancedOptions)
 
   }).then(options => {
@@ -182,8 +307,8 @@ function addCredential() {
     makeCredentialOptions.pubKeyCredParams = options.pubKeyCredParams;
 
     // Optional parameters
-    if ('timeout' in options) {
-      makeCredentialOptions.timeout = options.timeout;
+    if ($('#customTimeout').value != '') {
+      makeCredentialOptions.timeout = $('#customTimeout').value;
     }
     if ('excludeCredentials' in options) {
       makeCredentialOptions.excludeCredentials = credentialListConversion(options.excludeCredentials);
@@ -196,16 +321,39 @@ function addCredential() {
     }
     if ('extensions' in options) {
       makeCredentialOptions.extensions = options.extensions;
+      if (makeCredentialOptions.extensions.cableRegistration) {
+        makeCredentialOptions.extensions.cableRegistration.rpPublicKey =
+          strToBin(makeCredentialOptions.extensions.cableRegistration.rpPublicKey);
+      }
+    }
+    if (isChecked('#switch-uvm')) {
+      makeCredentialOptions.extensions.uvm = true;
     }
 
+    console.log('sending attestation request:');
     console.log(makeCredentialOptions);
 
+    if ($('#abortTimeout').value != '') {
+      authAbortController = new AbortController();
+      authAbortSignal = authAbortController.signal;
+      setTimeout(function(){ authAbortController.abort(); }, $('#abortTimeout').value);
+      return navigator.credentials.create({
+        "publicKey": makeCredentialOptions,
+        "signal": authAbortSignal
+      });
+    }
     return navigator.credentials.create({
       "publicKey": makeCredentialOptions
     });
 
   }).then(attestation => {
     hide('#active');
+    console.log('received attestation response:');
+    console.log(attestation);
+
+    if ($('#abortTimeout').value != '') {
+      clearTimeout();
+    }
 
     const publicKeyCredential = {};
 
@@ -219,12 +367,26 @@ function addCredential() {
       publicKeyCredential.rawId = binToStr(attestation.rawId);
     }
     if (!attestation.response) {
-      addErrorMsg("Make Credential response lacking 'response' attribute");
+      showErrorMsg("Make Credential response lacking 'response' attribute");
     }
 
     const response = {};
     response.clientDataJSON = binToStr(attestation.response.clientDataJSON);
     response.attestationObject = binToStr(attestation.response.attestationObject);
+
+    // Check for included extensions
+    if (attestation.getClientExtensionResults) {
+      publicKeyCredential.extensions = attestation.getClientExtensionResults();
+      if (attestation.getClientExtensionResults().uvm != null) {
+        publicKeyCredential.uvm = serializeUvm(attestation.getClientExtensionResults().uvm);
+      }
+    }
+
+    // Check if transports are included in the registration response.
+    if (attestation.response.getTransports) {
+      response.transports = attestation.response.getTransports();
+    }
+
     publicKeyCredential.response = response;
 
     return _fetch('/FinishMakeCredential', {
@@ -236,7 +398,7 @@ function addCredential() {
     console.log(parameters);
 
     if (parameters && parameters.success) {
-      addSuccessMsg(parameters.message);
+      showSuccessMsg(parameters.message);
       fetchCredentials();
     } else {
       throw 'Unexpected response received.';
@@ -245,12 +407,34 @@ function addCredential() {
   }).catch(err => {
     hide('#active');
     console.log(err.toString());
-    addErrorMsg(`An error occurred during Make Credential operation [${err.toString()}]`);
+    showErrorMsg(`An error occurred during Make Credential operation [${err.toString()}]`);
   });
 }
 
+function isUVPAA() {
+  try {
+    eval(PublicKeyCredential);
+  } catch(err) {
+    showErrorMsg(`UVPAA failed: [${err.toString()}]`);
+    return;
+  }
+  if (PublicKeyCredential &&
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+    PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(response => {
+      if (response === true) {
+        showSuccessMsg(`User verifying platform authenticator is available.`);
+      } else {
+        showErrorMsg(`User verifying platform authenticator is NOT available.`);
+      }
+    }).catch(err => {
+      showErrorMsg(`UVPAA failed: [${err.toString()}]`);
+    });
+  } else {
+    showErrorMsg(`User verifying platform authenticator is not available on this browser.`);
+  }
+}
+
 function getAssertion() {
-  removeMsgs();
   show('#active');
 
   let _parameters;
@@ -259,8 +443,8 @@ function getAssertion() {
     _parameters = parameters;
 
     requestOptions.challenge = strToBin(parameters.challenge);
-    if ('timeout' in parameters) {
-      requestOptions.timeout = parameters.timeout;
+    if ($('#customTimeout').value != '') {
+      requestOptions.timeout = $('#customTimeout').value;
     }
     if ('rpId' in parameters) {
       requestOptions.rpId = parameters.rpId;
@@ -268,8 +452,45 @@ function getAssertion() {
     if ('allowCredentials' in parameters) {
       requestOptions.allowCredentials = credentialListConversion(parameters.allowCredentials);
     }
+    if ($('#userVerification').value != "none") {
+      requestOptions.userVerification = $('#userVerification').value;
+    }
+    if ('extensions' in parameters) {
+      requestOptions.extensions = {};
+      let cableData = [];
+      if ('cableAuthentication' in parameters.extensions) {
+        for (cableElement of parameters.extensions.cableAuthentication){
+          let cableExtension = {
+              'version': cableElement.version,
+              'clientEid': strToBin(cableElement.clientEid),
+              'authenticatorEid': strToBin(cableElement.authenticatorEid),
+              'sessionPreKey': strToBin(cableElement.sessionPreKey),
+          };
+          cableData.push(cableExtension);
+        }
+        requestOptions.extensions['cableAuthentication'] = cableData;
+      }
+    }
 
+    if (isChecked('#switch-uvm')) {
+      if (requestOptions.extensions == null) {
+        requestOptions.extensions = {};
+      }
+      requestOptions.extensions.uvm = true;
+    }
+
+    console.log('sending assertion request:');
     console.log(requestOptions);
+
+    if ($('#abortTimeout').value != '') {
+      authAbortController = new AbortController();
+      authAbortSignal = authAbortController.signal;
+      setTimeout(function(){ authAbortController.abort(); }, $('#abortTimeout').value);
+      return navigator.credentials.get({
+        "publicKey": requestOptions,
+        "signal": authAbortSignal
+      });
+    }
 
     return navigator.credentials.get({
       "publicKey": requestOptions
@@ -277,6 +498,13 @@ function getAssertion() {
 
   }).then(assertion => {
     hide('#active');
+
+    if ($('#abortTimeout').value != '') {
+      clearTimeout();
+    }
+
+    console.log('received assertion response:');
+    console.log(assertion);
 
     const publicKeyCredential = {};
 
@@ -291,6 +519,11 @@ function getAssertion() {
     }
     if (!assertion.response) {
       throw "Get assertion response lacking 'response' attribute";
+    }
+    if (assertion.getClientExtensionResults) {
+      if (assertion.getClientExtensionResults().uvm != null) {
+        publicKeyCredential.uvm = serializeUvm(assertion.getClientExtensionResults().uvm);
+      }
     }
 
     const _response = assertion.response;
@@ -311,13 +544,16 @@ function getAssertion() {
     console.log(result);
 
     if (result && result.success) {
-      addSuccessMsg(result.message);
+      showSuccessMsg(result.message);
       if ('handle' in result) {
+        setTimeout(function(){ fetchCredentials(); }, 2000);
         let card = document.getElementById(result.handle);
+        let prevColor =
+          getComputedStyle(card).backgroundColor;
         card.animate([{
           backgroundColor: '#009688'
         },{
-          backgroundColor: 'white'
+          backgroundColor: prevColor
         }], {
           duration: 2000,
           easing: 'ease-out'
@@ -327,7 +563,7 @@ function getAssertion() {
   }).catch(err => {
     hide('#active');
     console.log(err.toString());
-    addErrorMsg(`An error occurred during Assertion request [${err.toString()}]`);
+    showErrorMsg(`An error occurred during Assertion request [${err.toString()}]`);
   });
 }
 
@@ -350,19 +586,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (navigator.credentials && navigator.credentials.create) {
     fetchCredentials();
   } else {
-    addErrorMsg('Your browser doesn\'t support WebAuthn');
+    showErrorMsg('Your browser doesn\'t support WebAuthn');
     fetchCredentials();
   }
 });
 
 window.addEventListener('load', () => {
-  onClick('#credential-button', addCredential);
+  onClick('#credential-button', registerNewCredential);
+  onClick('#platform-button', registerPlatformAuthenticator);
   onClick('#authenticate-button', getAssertion);
-  onClick('#switch-advanced', () => {
-    if (isChecked('#switch-advanced')) {
-      show('#advanced');
-    } else {
-      hide('#advanced');
-    }
-  });
+  onClick('#isuvpaa-button', isUVPAA);
 });

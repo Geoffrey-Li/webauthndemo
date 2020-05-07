@@ -36,9 +36,17 @@ import com.google.webauthn.gaedemo.objects.RsaKey;
 import com.google.webauthn.gaedemo.storage.Credential;
 import com.google.webauthn.gaedemo.storage.SessionData;
 
+import co.nstant.in.cbor.CborException;
+
 public abstract class Server {
   private static final Logger Log = Logger.getLogger(U2fServer.class.getName());
 
+  /**
+   * @param assertionResponse
+   * @param currentUser
+   * @param sessionId
+   * @throws ResponseException
+   */
   public static void verifySessionAndChallenge(AuthenticatorResponse assertionResponse,
       String currentUser, String sessionId) throws ResponseException {
     Log.info("-- Verifying provided session and challenge data --");
@@ -64,7 +72,7 @@ public abstract class Server {
     }
     SessionData.remove(currentUser, Long.valueOf(id));
 
-    // Session.getChallenge is a base64-encoded string
+    // Session.getChallenge returns a base64-encoded string
     byte[] sessionChallenge = BaseEncoding.base64().decode(session.getChallenge());
     // assertionResponse.getClientData().getChallenge() is a base64url-encoded string
     byte[] clientSessionChallenge =
@@ -75,6 +83,13 @@ public abstract class Server {
     Log.info("Successfully verified session and challenge data");
   }
 
+  /**
+   * @param cred
+   * @param currentUser
+   * @param sessionId
+   * @return
+   * @throws ResponseException
+   */
   public static Credential validateAndFindCredential(PublicKeyCredential cred, String currentUser,
       String sessionId) throws ResponseException {
     if (!(cred.getResponse() instanceof AuthenticatorAssertionResponse)) {
@@ -92,7 +107,7 @@ public abstract class Server {
     try {
       verifySessionAndChallenge(assertionResponse, currentUser, sessionId);
     } catch (ResponseException e1) {
-      throw new ResponseException("Unable to verify session and challenge data");
+      throw new ResponseException("Unable to verify session and challenge data", e1);
     }
 
     Credential credential = null;
@@ -143,8 +158,18 @@ public abstract class Server {
 
       byte[] clientDataHash = Crypto.sha256Digest(assertionResponse.getClientDataBytes());
 
+      byte[] signedBytes;
       // concat of aData (authDataBytes) and hash of cData (clientDataHash)
-      byte[] signedBytes = Bytes.concat(assertionResponse.getAuthDataBytes(), clientDataHash);
+      try {
+        signedBytes = Bytes.concat(assertionResponse.getAuthDataBytes(), clientDataHash);
+      } catch (NullPointerException e) {
+        try {
+          signedBytes = Bytes.concat(assertionResponse.getAuthenticatorData().encode(),
+              clientDataHash);
+        } catch (CborException e1) {
+          throw new ServletException("Authenticator data invalid", e);
+        }
+      }
       String signatureAlgorithm = AlgorithmIdentifierMapper.get(
           storedAttData.decodedObject.getAuthenticatorData().getAttData().getPublicKey().getAlg())
           .getJavaAlgorithm();
@@ -153,7 +178,7 @@ public abstract class Server {
         throw new ServletException("Signature invalid");
       }
     } catch (WebAuthnException e) {
-      throw new ServletException("Failure while verifying signature");
+      throw new ServletException("Failure while verifying signature", e);
     }
 
     if (Integer.compareUnsigned(assertionResponse.getAuthenticatorData().getSignCount(),

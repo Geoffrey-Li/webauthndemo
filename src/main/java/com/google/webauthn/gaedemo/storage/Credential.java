@@ -16,13 +16,17 @@ package com.google.webauthn.gaedemo.storage;
 
 import static com.googlecode.objectify.ObjectifyService.ofy;
 
-import com.google.gson.*;
-import com.google.webauthn.gaedemo.exceptions.ResponseException;
-import com.google.webauthn.gaedemo.objects.PublicKeyCredential;
-import com.googlecode.objectify.*;
-import com.googlecode.objectify.annotation.*;
 import java.util.Date;
 import java.util.List;
+
+import com.google.gson.Gson;
+import com.google.webauthn.gaedemo.exceptions.ResponseException;
+import com.google.webauthn.gaedemo.objects.CablePairingData;
+import com.google.webauthn.gaedemo.objects.PublicKeyCredential;
+import com.googlecode.objectify.Key;
+import com.googlecode.objectify.annotation.Entity;
+import com.googlecode.objectify.annotation.Id;
+import com.googlecode.objectify.annotation.Parent;
 
 @Entity
 public class Credential {
@@ -34,6 +38,9 @@ public class Credential {
   private Date date;
   private int signCount;
   private PublicKeyCredential credential;
+
+  private CablePairingData cablePairingData;
+  private String userVerificationMethod;
 
   public Credential() {
     signCount = 0;
@@ -110,4 +117,27 @@ public class Credential {
     return date;
   }
 
+  public CablePairingData getCablePairingData() {
+    return cablePairingData;
+  }
+
+  public void setCablePairingData(CablePairingData cablePairingData) {
+    this.cablePairingData = cablePairingData;
+  }
+
+  public boolean hasCablePairingData() {
+    return cablePairingData != null;
+  }
+
+  public void setUserVerificationMethod(String userVerificationMethod) {
+    this.userVerificationMethod = userVerificationMethod;
+  }
+
+  public boolean hasUserVerificationMethod() {
+    return userVerificationMethod != null;
+  }
+
+  public String getUserVerificationMethod() {
+    return userVerificationMethod;
+  }
 }

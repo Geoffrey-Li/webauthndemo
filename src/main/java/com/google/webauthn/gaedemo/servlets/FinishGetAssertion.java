@@ -14,21 +14,7 @@
 
 package com.google.webauthn.gaedemo.servlets;
 
-import com.google.appengine.api.users.UserService;
-import com.google.appengine.api.users.UserServiceFactory;
-import com.google.common.io.BaseEncoding;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
-import com.google.webauthn.gaedemo.exceptions.ResponseException;
-import com.google.webauthn.gaedemo.objects.AuthenticatorAssertionResponse;
-import com.google.webauthn.gaedemo.objects.PublicKeyCredential;
-import com.google.webauthn.gaedemo.server.AndroidSafetyNetServer;
-import com.google.webauthn.gaedemo.server.PackedServer;
-import com.google.webauthn.gaedemo.server.PublicKeyCredentialResponse;
-import com.google.webauthn.gaedemo.server.Server;
-import com.google.webauthn.gaedemo.storage.Credential;
+import java.io.IOException;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
@@ -36,10 +22,25 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.xml.bind.DatatypeConverter;
 
-import java.io.IOException;
+import com.google.appengine.api.users.UserService;
+import com.google.appengine.api.users.UserServiceFactory;
+import com.google.common.io.BaseEncoding;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
+import com.google.webauthn.gaedemo.exceptions.ResponseException;
+import com.google.webauthn.gaedemo.objects.AuthenticatorAssertionResponse;
+import com.google.webauthn.gaedemo.objects.PublicKeyCredential;
+import com.google.webauthn.gaedemo.server.PublicKeyCredentialResponse;
+import com.google.webauthn.gaedemo.server.Server;
+import com.google.webauthn.gaedemo.storage.Credential;
 
 
 public class FinishGetAssertion extends HttpServlet {
+  private static final int FINGERPRINT = 2;
+  private static final int SCREEN_LOCK = 134;
   private static final long serialVersionUID = 1L;
   private final UserService userService = UserServiceFactory.getUserService();
 
@@ -59,10 +60,17 @@ public class FinishGetAssertion extends HttpServlet {
       throws ServletException, IOException {
     String currentUser = userService.getCurrentUser().getEmail();
     String data = request.getParameter("data");
+    if (data == null) {
+      data = "";
+    }
     String session = request.getParameter("session");
+    if (session == null) {
+      session = "";
+    }
 
     String credentialId = null;
     String type = null;
+    String uvm = null;
     JsonElement assertionJson = null;
 
     try {
@@ -74,6 +82,26 @@ public class FinishGetAssertion extends HttpServlet {
       JsonElement typeJson = json.get("type");
       if (typeJson != null) {
         type = typeJson.getAsString();
+      }
+      JsonElement uvmJson = json.get("uvm");
+      if (uvmJson != null && uvmJson.isJsonArray()) {
+        JsonArray uvmArray = uvmJson.getAsJsonArray();
+        if (uvmJson.isJsonArray()) {
+          JsonElement uvmElement = uvmArray.get(0);
+          if(uvmElement != null) {
+            switch (uvmElement.getAsJsonObject().get("userVerificationMethod").getAsInt()){
+              case FINGERPRINT:
+                uvm = "Fingerprint";
+                break;
+              case SCREEN_LOCK:
+                uvm = "Screen Lock";
+                break;
+              default:
+                uvm = "Others";
+                break;
+            }
+          }
+        }
       }
       assertionJson = json.get("response");
       if (assertionJson == null) {
@@ -108,20 +136,9 @@ public class FinishGetAssertion extends HttpServlet {
       throw new ServletException("Unable to validate assertion", e);
     }
 
-
-    // switch (savedCredential.getCredential().getAttestationType()) {
-    // case FIDOU2F:
-    // U2fServer.verifyAssertion(cred, currentUser, session, savedCredential);
-    // break;
-    // case ANDROIDSAFETYNET:
-    // AndroidSafetyNetServer.verifyAssertion(cred, currentUser, session, savedCredential);
-    // break;
-    // case PACKED:
-    // PackedServer.verifyAssertion(cred, currentUser, session, savedCredential);
-    // break;
-    // }
-
     Server.verifyAssertion(cred, currentUser, session, savedCredential);
+    savedCredential.setUserVerificationMethod(uvm);
+    savedCredential.save(currentUser);
 
     response.setContentType("application/json");
     String handle = DatatypeConverter.printHexBinary(savedCredential.getCredential().rawId);
